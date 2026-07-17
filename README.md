@@ -1,8 +1,3 @@
----
-noteId: "4a00be10817711f1aed8cfa6badee3f5"
-tags: []
-
----
 
 # Clinical Trial Power Calculator
 
