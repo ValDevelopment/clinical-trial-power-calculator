@@ -1,9 +1,9 @@
 import streamlit as st
 import numpy as np
+import matplotlib.pyplot as plt
 from power_calc.continuous import ContinuousEndpoint
 from power_calc.binary import BinaryEndpoint
 from power_calc.survival import SurvivalEndpoint
-import matplotlib.pyplot as plt
 
 st.title("Clinical Trial Power Calculator")
 
