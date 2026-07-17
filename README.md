@@ -7,7 +7,7 @@ A sample size and power calculator for two-arm clinical trials, covering continu
 
 Sample size planning is a design-stage problem: before a trial exists, a statistician must determine how many subjects are required to detect an effect of a given size at a specified level of confidence. This tool addresses that question in two ways for each endpoint type: a closed-form formula for rapid estimation, and a simulation that generates synthetic subject-level data under the specified assumptions and fits the actual analysis model to it, producing an empirical power estimate that reflects what the planned analysis would find in practice.
 
-This project is deliberately prospective rather than retrospective. The [CDISC safety analysis](../cdisc-safety-portfolio) and [FAERS signal detection](../faers-signal-detection) projects both analyze data that already exists. This tool supports the decision made before a trial begins, addressing a different phase of a trial's life cycle than either of those projects.
+This project is deliberately prospective rather than retrospective. The [CDISC survival analysis](https://github.com/ValDevelopment/CDISC-ADaM-Survival-Analysis) and [FAERS signal detection](https://github.com/ValDevelopment/FAERS-signal-detection) projects both analyze data that already exists. This tool supports the decision made before a trial begins, addressing a different phase of a trial's life cycle than either of those projects.
 
 ## Approach
 
@@ -47,7 +47,7 @@ The gap observed for the binary and survival endpoints does not indicate an impl
 
 One additional implementation-level finding is documented here: `scipy.stats.nct.cdf`, used in the continuous endpoint's closed-form power calculation, returns `NaN` for certain large combinations of degrees of freedom and noncentrality. This is a numerical instability internal to `scipy`, not a defect in the underlying formula. `closed_form_sample_size` avoids this condition by expanding its root-finding bracket geometrically from a small starting point rather than searching a fixed, arbitrarily wide range, which keeps the search away from the unstable region. This approach was verified against 500 randomized parameter combinations with zero failures.
 
-## Worked Example
+## CDISC Example
 
 `notebooks/04_worked_example.ipynb` applies the survival endpoint to a finding from the CDISC safety analysis project: a hazard ratio of 5.03 for dose-dependent adverse event risk. A confirmatory study powered around this observed effect requires approximately 15 total subjects, reflecting the magnitude of the effect. A more conservative planning assumption (HR = 1.5) requires approximately 293 subjects, nearly twenty times as many. This comparison illustrates the notebook's central point: required sample size for a confirmatory trial depends substantially on the level of confidence placed in a pilot study's effect size estimate, a judgment this tool is intended to support rather than replace.
 
