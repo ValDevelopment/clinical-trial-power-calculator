@@ -7,7 +7,7 @@ A sample size and power calculator for two-arm clinical trials, covering continu
 
 Sample size planning is a design-stage problem: before a trial exists, a statistician must determine how many subjects are required to detect an effect of a given size at a specified level of confidence. This tool addresses that question in two ways for each endpoint type: a closed-form formula for rapid estimation, and a simulation that generates synthetic subject-level data under the specified assumptions and fits the actual analysis model to it, producing an empirical power estimate that reflects what the planned analysis would find in practice.
 
-This project is deliberately prospective rather than retrospective. The [CDISC safety analysis](https://github.com/ValDevelopment/CDISC-ADaM-Survival-Analysis) and [FAERS signal detection](https://github.com/ValDevelopment/FAERS-signal-detection) projects both analyze data that already exists. This tool supports the decision made before a trial begins, addressing a different phase of a trial's life cycle than either of those projects.
+This project is deliberately prospective rather than retrospective. The [CDISC survival analysis](https://github.com/ValDevelopment/CDISC-ADaM-Survival-Analysis) and [FAERS signal detection](https://github.com/ValDevelopment/FAERS-signal-detection) projects both analyze data that already exists. This tool supports the decision made before a trial begins, addressing a different phase of a trial's life cycle than either of those projects.
 
 ## Approach
 
