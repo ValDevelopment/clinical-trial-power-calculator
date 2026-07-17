@@ -91,3 +91,20 @@ class SurvivalEndpoint:
             if result.pvalues[0] < self.alpha:
                 reject += 1
         return reject / n_sims
+    
+    def closed_form_power(self, n_per_arm, hazard_ratio, control_median_survival):
+        h0 = np.log(2) / control_median_survival
+        h_treat = h0 * hazard_ratio
+        q = self.allocation_ratio / (1 + self.allocation_ratio)
+
+        p_control = self._expected_event_probability(h0)
+        p_treat = self._expected_event_probability(h_treat)
+        p_overall = q * p_treat + (1 - q) * p_control
+
+        n_total = n_per_arm * (1 + self.allocation_ratio)
+        events = n_total * p_overall
+
+        z_alpha = stats.norm.ppf(1 - self.alpha / 2)
+        z_beta = np.sqrt(events * q * (1 - q)) * abs(np.log(hazard_ratio)) - z_alpha
+        return stats.norm.cdf(z_beta)
+    
