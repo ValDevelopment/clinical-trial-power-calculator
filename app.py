@@ -21,56 +21,129 @@ endpoint_type = st.selectbox(
 )
 
 if endpoint_type == "Continuous":
-    treatment_effect = st.number_input(
-        "Treatment effect (mean difference)", value=5.0,
-        help="True mean difference in outcome between the treatment and control arms.",
-    )
-    outcome_sd = st.number_input(
-        "Outcome standard deviation", value=10.0, min_value=0.01,
-        help="Natural variability in outcome between subjects, independent of treatment.",
-    )
-    baseline_outcome_corr = st.slider(
-        "Baseline-outcome correlation", 0.0, 0.95, 0.5,
-        help="Correlation between baseline value and final outcome. Higher values increase the power gained from adjusting for baseline in the analysis.",
-    )
-    power_target = st.slider(
-        "Target power", 0.5, 0.99, 0.8,
-        help="Probability of detecting the treatment effect at the calculated sample size, assuming the effect is real.",
-    )
-    alpha = st.number_input(
-        "Alpha (significance level)", value=0.05, min_value=0.001, max_value=0.5,
-        help="Acceptable false-positive rate. Conventional default is 0.05.",
+    test_type = st.radio(
+        "Test type",
+        ["Superiority", "Non-inferiority"],
+        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin.",
     )
 
-    allocation_ratio = st.number_input(
-        "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
-        help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation. A value of 2.0 indicates twice as many subjects in the treatment arm as the control arm.",
-    )
+    if test_type == "Superiority":
+        treatment_effect = st.number_input(
+            "Treatment effect (mean difference)", value=5.0,
+            help="True mean difference in outcome between the treatment and control arms.",
+        )
+        outcome_sd = st.number_input(
+            "Outcome standard deviation", value=10.0, min_value=0.01,
+            help="Natural variability in outcome between subjects, independent of treatment.",
+        )
+        baseline_outcome_corr = st.slider(
+            "Baseline-outcome correlation", 0.0, 0.95, 0.5,
+            help="Correlation between baseline value and final outcome. Higher values increase the power gained from adjusting for baseline in the analysis.",
+        )
+        power_target = st.slider(
+            "Target power", 0.5, 0.99, 0.8,
+            help="Probability of detecting the treatment effect at the calculated sample size, assuming the effect is real.",
+        )
+        alpha = st.number_input(
+            "Alpha (significance level)", value=0.05, min_value=0.001, max_value=0.5,
+            help="Acceptable false-positive rate. Conventional default is 0.05.",
+        )
+        allocation_ratio = st.number_input(
+            "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+            help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation. A value of 2.0 indicates twice as many subjects in the treatment arm as the control arm.",
+        )
 
-    run_simulation = st.checkbox(
-        "Also validate with simulation-based power",
-        help="Generates synthetic trial data and fits the ANCOVA model directly to estimate power. Slower than the closed-form formula. Reflects the result of an actual regression-based analysis.",
-    )
-    
-    if run_simulation:
-        n_sims = st.number_input("Number of simulations", value=2000, min_value=100, step=100)
+        run_simulation = st.checkbox(
+            "Also validate with simulation-based power",
+            help="Generates synthetic trial data and fits the ANCOVA model directly to estimate power. Slower than the closed-form formula. Reflects the result of an actual regression-based analysis.",
+        )
+        if run_simulation:
+            n_sims = st.number_input("Number of simulations", value=2000, min_value=100, step=100)
 
-    if st.button("Calculate"):
-        if treatment_effect == 0:
-            st.error("Treatment effect is 0. No finite sample size exists when there is no difference between arms. Enter a non-zero treatment effect.")
-        else:
-            trial = ContinuousEndpoint(
-                outcome_sd=outcome_sd, baseline_outcome_corr=baseline_outcome_corr,
-                alpha=alpha, allocation_ratio=allocation_ratio,
-            )
+        if st.button("Calculate"):
+            if treatment_effect == 0:
+                st.error("Treatment effect is 0. No finite sample size exists when there is no difference between arms. Enter a non-zero treatment effect.")
+            else:
+                trial = ContinuousEndpoint(
+                    outcome_sd=outcome_sd, baseline_outcome_corr=baseline_outcome_corr,
+                    alpha=alpha, allocation_ratio=allocation_ratio,
+                )
+                try:
+                    n_control = trial.closed_form_sample_size(treatment_effect=treatment_effect, power=power_target)
+                except RuntimeError:
+                    st.error(
+                        "The required sample size exceeds 10 million subjects per arm, far beyond any "
+                        "realistic trial. This treatment effect is too small relative to the outcome "
+                        "standard deviation to be practically detectable. Consider a larger effect or a "
+                        "smaller standard deviation."
+                    )
+                else:
+                    n_treatment = n_control * allocation_ratio
+                    st.write(f"Control arm sample size: {n_control:.1f}")
+                    st.write(f"Treatment arm sample size: {n_treatment:.1f}")
+                    st.write(f"Total sample size: {n_control + n_treatment:.1f}")
+
+                    st.subheader("Power curve")
+                    n_range = np.linspace(5, n_control * 2, 100)
+                    power_curve = [trial.closed_form_power(n, treatment_effect) for n in n_range]
+
+                    fig, ax = plt.subplots()
+                    ax.plot(n_range, power_curve)
+                    ax.axhline(power_target, color="gray", linestyle="--", label=f"target power ({power_target})")
+                    ax.axvline(n_control, color="red", linestyle="--", label=f"required n ({n_control:.1f})")
+                    ax.set_xlabel("Control arm sample size")
+                    ax.set_ylabel("Power")
+                    ax.legend()
+                    st.pyplot(fig)
+
+                    if run_simulation:
+                        with st.spinner("Running simulation..."):
+                            sim_power = trial.simulate_power(
+                                n_per_arm=round(n_control), treatment_effect=treatment_effect, n_sims=n_sims, seed=1,
+                            )
+                        st.write(f"Simulated power at control n={round(n_control)}: {sim_power:.3f} (target: {power_target})")
+                        st.caption(
+                            "Simulated power can exceed the closed-form target when the baseline-outcome correlation "
+                            "is high. Adjusting for a predictive baseline covariate increases power beyond the "
+                            "closed-form assumption."
+                        )
+
+    else:  # Non-inferiority
+        margin = st.number_input(
+            "Non-inferiority margin", value=2.0, min_value=0.01,
+            help="Largest acceptable amount by which the treatment mean could be worse than control and still be declared non-inferior.",
+        )
+        assumed_true_effect = st.number_input(
+            "Assumed true treatment effect (mean difference)", value=0.0,
+            help="The actual difference assumed to exist between arms for planning purposes. 0 (treatment truly equal to control) is the standard conservative assumption.",
+        )
+        outcome_sd = st.number_input(
+            "Outcome standard deviation", value=10.0, min_value=0.01,
+            help="Natural variability in outcome between subjects, independent of treatment.",
+        )
+        power_target = st.slider(
+            "Target power", 0.5, 0.99, 0.8,
+            help="Probability of declaring non-inferiority at the calculated sample size, assuming the specified true effect.",
+        )
+        alpha = st.number_input(
+            "Alpha (one-sided significance level)", value=0.025, min_value=0.001, max_value=0.5,
+            help="Acceptable false-positive rate for the one-sided non-inferiority test. Regulatory convention commonly uses 0.025 one-sided, considered equivalent rigor to a two-sided 0.05 test.",
+        )
+        allocation_ratio = st.number_input(
+            "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+            help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation. A value of 2.0 indicates twice as many subjects in the treatment arm as the control arm.",
+        )
+
+        if st.button("Calculate"):
+            trial = ContinuousEndpoint(outcome_sd=outcome_sd, alpha=alpha, allocation_ratio=allocation_ratio)
             try:
-                n_control = trial.closed_form_sample_size(treatment_effect=treatment_effect, power=power_target)
+                n_control = trial.closed_form_sample_size_ni(margin=margin, treatment_effect=assumed_true_effect, power=power_target)
             except RuntimeError:
                 st.error(
                     "The required sample size exceeds 10 million subjects per arm, far beyond any "
-                    "realistic trial. This treatment effect is too small relative to the outcome "
-                    "standard deviation to be practically detectable. Consider a larger effect or a "
-                    "smaller standard deviation."
+                    "realistic trial. This margin is too small relative to the outcome standard "
+                    "deviation to be practically achievable. Consider a larger margin or a smaller "
+                    "standard deviation."
                 )
             else:
                 n_treatment = n_control * allocation_ratio
@@ -80,7 +153,7 @@ if endpoint_type == "Continuous":
 
                 st.subheader("Power curve")
                 n_range = np.linspace(5, n_control * 2, 100)
-                power_curve = [trial.closed_form_power(n, treatment_effect) for n in n_range]
+                power_curve = [trial.closed_form_power_ni(n, margin, assumed_true_effect) for n in n_range]
 
                 fig, ax = plt.subplots()
                 ax.plot(n_range, power_curve)
@@ -90,18 +163,6 @@ if endpoint_type == "Continuous":
                 ax.set_ylabel("Power")
                 ax.legend()
                 st.pyplot(fig)
-
-                if run_simulation:
-                    with st.spinner("Running simulation..."):
-                        sim_power = trial.simulate_power(
-                            n_per_arm=round(n_control), treatment_effect=treatment_effect, n_sims=n_sims, seed=1,
-                        )
-                    st.write(f"Simulated power at control n={round(n_control)}: {sim_power:.3f} (target: {power_target})")
-                    st.caption(
-                        "Simulated power can exceed the closed-form target when the baseline-outcome correlation "
-                        "is high. Adjusting for a predictive baseline covariate increases power beyond the "
-                        "closed-form assumption."
-                    )
 elif endpoint_type == "Binary":
     control_event_rate = st.slider(
         "Control arm event rate", 0.01, 0.99, 0.30,
