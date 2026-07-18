@@ -42,6 +42,11 @@ if endpoint_type == "Continuous":
         help="Acceptable false-positive rate. Conventional default is 0.05.",
     )
 
+    allocation_ratio = st.number_input(
+        "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+        help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation. A value of 2.0 indicates twice as many subjects in the treatment arm as the control arm.",
+    )
+
     run_simulation = st.checkbox(
         "Also validate with simulation-based power",
         help="Generates synthetic trial data and fits the ANCOVA model directly to estimate power. Slower than the closed-form formula. Reflects the result of an actual regression-based analysis.",
@@ -54,10 +59,13 @@ if endpoint_type == "Continuous":
         if treatment_effect == 0:
             st.error("Treatment effect is 0. No finite sample size exists when there is no difference between arms. Enter a non-zero treatment effect.")
         else:
-            trial = ContinuousEndpoint(outcome_sd=outcome_sd, baseline_outcome_corr=baseline_outcome_corr, alpha=alpha)
+            trial = ContinuousEndpoint(
+                outcome_sd=outcome_sd, baseline_outcome_corr=baseline_outcome_corr,
+                alpha=alpha, allocation_ratio=allocation_ratio,
+            )
             try:
-                n_per_arm = trial.closed_form_sample_size(treatment_effect=treatment_effect, power=power_target)
-            except RuntimeError as e:
+                n_control = trial.closed_form_sample_size(treatment_effect=treatment_effect, power=power_target)
+            except RuntimeError:
                 st.error(
                     "The required sample size exceeds 10 million subjects per arm, far beyond any "
                     "realistic trial. This treatment effect is too small relative to the outcome "
@@ -65,32 +73,35 @@ if endpoint_type == "Continuous":
                     "smaller standard deviation."
                 )
             else:
-                st.write(f"Required sample size per arm: {n_per_arm:.1f}")
+                n_treatment = n_control * allocation_ratio
+                st.write(f"Control arm sample size: {n_control:.1f}")
+                st.write(f"Treatment arm sample size: {n_treatment:.1f}")
+                st.write(f"Total sample size: {n_control + n_treatment:.1f}")
 
                 st.subheader("Power curve")
-                n_range = np.linspace(5, n_per_arm * 2, 100)
+                n_range = np.linspace(5, n_control * 2, 100)
                 power_curve = [trial.closed_form_power(n, treatment_effect) for n in n_range]
 
                 fig, ax = plt.subplots()
                 ax.plot(n_range, power_curve)
                 ax.axhline(power_target, color="gray", linestyle="--", label=f"target power ({power_target})")
-                ax.axvline(n_per_arm, color="red", linestyle="--", label=f"required n ({n_per_arm:.1f})")
-                ax.set_xlabel("Sample size per arm")
+                ax.axvline(n_control, color="red", linestyle="--", label=f"required n ({n_control:.1f})")
+                ax.set_xlabel("Control arm sample size")
                 ax.set_ylabel("Power")
                 ax.legend()
                 st.pyplot(fig)
 
-        if run_simulation:
-            with st.spinner("Running simulation..."):
-                sim_power = trial.simulate_power(
-                    n_per_arm=round(n_per_arm), treatment_effect=treatment_effect, n_sims=n_sims, seed=1,
-                )
-            st.write(f"Simulated power at n={round(n_per_arm)}: {sim_power:.3f} (target: {power_target})")
-            st.caption(
-                "Simulated power can exceed the closed-form target when the baseline-outcome correlation "
-                "is high. Adjusting for a predictive baseline covariate increases power beyond the "
-                "closed-form assumption."
-            )
+                if run_simulation:
+                    with st.spinner("Running simulation..."):
+                        sim_power = trial.simulate_power(
+                            n_per_arm=round(n_control), treatment_effect=treatment_effect, n_sims=n_sims, seed=1,
+                        )
+                    st.write(f"Simulated power at control n={round(n_control)}: {sim_power:.3f} (target: {power_target})")
+                    st.caption(
+                        "Simulated power can exceed the closed-form target when the baseline-outcome correlation "
+                        "is high. Adjusting for a predictive baseline covariate increases power beyond the "
+                        "closed-form assumption."
+                    )
 elif endpoint_type == "Binary":
     control_event_rate = st.slider(
         "Control arm event rate", 0.01, 0.99, 0.30,
@@ -110,6 +121,11 @@ elif endpoint_type == "Binary":
     )
 
 
+    allocation_ratio = st.number_input(
+        "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+        help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation. A value of 2.0 indicates twice as many subjects in the treatment arm as the control arm.",
+    )
+
     run_simulation = st.checkbox(
         "Also validate with simulation-based power",
         help="Generates synthetic trial data and fits a logistic regression model directly to estimate power. Slower than the closed-form formula. Reflects the result of an actual regression-based analysis.",
@@ -121,29 +137,31 @@ elif endpoint_type == "Binary":
         if odds_ratio == 1.0:
             st.error("Treatment odds ratio is 1.0, meaning no difference between arms. No finite sample size exists when there is no difference between arms. Enter an odds ratio other than 1.0.")
         else:
-            trial = BinaryEndpoint(alpha=alpha)
+            trial = BinaryEndpoint(alpha=alpha, allocation_ratio=allocation_ratio)
             odds_control = control_event_rate / (1 - control_event_rate)
             odds_treatment = odds_control * odds_ratio
             p_treatment = odds_treatment / (1 + odds_treatment)
 
             try:
-                n_per_arm = trial.closed_form_sample_size(p1=control_event_rate, p2=p_treatment, power=power_target)
+                n_control = trial.closed_form_sample_size(p1=control_event_rate, p2=p_treatment, power=power_target)
             except ValueError:
                 st.error("Could not calculate a sample size for these inputs. Check that the control event rate and odds ratio produce a realistic treatment event rate.")
             else:
+                n_treatment = n_control * allocation_ratio
                 st.write(f"Treatment arm event rate implied by this odds ratio: {p_treatment:.3f}")
-                st.write(f"Required sample size per arm: {n_per_arm:.1f}")
+                st.write(f"Control arm sample size: {n_control:.1f}")
+                st.write(f"Treatment arm sample size: {n_treatment:.1f}")
+                st.write(f"Total sample size: {n_control + n_treatment:.1f}")
 
                 st.subheader("Power curve")
-                n_max = n_per_arm * 2
-                n_range = np.linspace(5, n_max, 100)
+                n_range = np.linspace(5, n_control * 2, 100)
                 power_curve = [trial.closed_form_power(n, control_event_rate, p_treatment) for n in n_range]
 
                 fig, ax = plt.subplots()
                 ax.plot(n_range, power_curve)
                 ax.axhline(power_target, color="gray", linestyle="--", label=f"target power ({power_target})")
-                ax.axvline(n_per_arm, color="red", linestyle="--", label=f"required n ({n_per_arm:.1f})")
-                ax.set_xlabel("Sample size per arm")
+                ax.axvline(n_control, color="red", linestyle="--", label=f"required n ({n_control:.1f})")
+                ax.set_xlabel("Control arm sample size")
                 ax.set_ylabel("Power")
                 ax.legend()
                 st.pyplot(fig)
@@ -151,10 +169,10 @@ elif endpoint_type == "Binary":
                 if run_simulation:
                     with st.spinner("Running simulation..."):
                         sim_power = trial.simulate_power(
-                            n_per_arm=round(n_per_arm), control_event_rate=control_event_rate,
+                            n_per_arm=round(n_control), control_event_rate=control_event_rate,
                             odds_ratio=odds_ratio, n_sims=n_sims, seed=1,
                         )
-                    st.write(f"Simulated power at n={round(n_per_arm)}: {sim_power:.3f} (target: {power_target})")
+                    st.write(f"Simulated power at control n={round(n_control)}: {sim_power:.3f} (target: {power_target})")
                     st.caption(
                         "Simulated power can differ from the closed-form target because the closed-form "
                         "formula assumes a two-proportion test, while the simulation fits logistic "
@@ -190,6 +208,11 @@ elif endpoint_type == "Survival":
         help="Acceptable false-positive rate. Conventional default is 0.05.",
     )
 
+    allocation_ratio = st.number_input(
+        "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+        help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation. A value of 2.0 indicates twice as many subjects in the treatment arm as the control arm.",
+    )
+
     run_simulation = st.checkbox(
         "Also validate with simulation-based power",
         help="Generates synthetic trial data and fits a Cox proportional hazards model directly to estimate power. Slower than the closed-form formula. Reflects the result of an actual regression-based analysis.",
@@ -199,38 +222,45 @@ elif endpoint_type == "Survival":
         st.caption("Cox model fits are slower than the other endpoints, fewer simulations by default.")
 
     if st.button("Calculate"):
-        trial = SurvivalEndpoint(accrual_period=accrual_period, follow_up_period=follow_up_period, alpha=alpha)
-        result = trial.closed_form_sample_size(
-            hazard_ratio=hazard_ratio, control_median_survival=control_median_survival, power=power_target,
-        )
-        st.write(f"Events needed: {result['events_needed']:.1f}")
-        st.write(f"Sample size per arm: {result['n_control']:.1f}")
-        st.write(f"Total sample size: {result['n_total']:.1f}")
-        st.subheader("Power curve")
-        n_per_arm_point = result["n_control"]
-        n_range = np.linspace(5, n_per_arm_point * 2, 100)
-        power_curve = [trial.closed_form_power(n, hazard_ratio, control_median_survival) for n in n_range]
-
-        fig, ax = plt.subplots()
-        ax.plot(n_range, power_curve)
-        ax.axhline(power_target, color="gray", linestyle="--", label=f"target power ({power_target})")
-        ax.axvline(n_per_arm_point, color="red", linestyle="--", label=f"required n ({n_per_arm_point:.1f})")
-        ax.set_xlabel("Sample size per arm")
-        ax.set_ylabel("Power")
-        ax.legend()
-        st.pyplot(fig)
-
-        if run_simulation:
-            with st.spinner("Running simulation (this one's slower)..."):
-                sim_power = trial.simulate_power(
-                    n_per_arm=round(result["n_control"]), control_median_survival=control_median_survival,
-                    hazard_ratio=hazard_ratio, n_sims=n_sims, seed=1,
-                )
-            st.write(f"Simulated power at n={round(result['n_control'])}: {sim_power:.3f} (target: {power_target})")
-            st.caption(
-                "Simulated power can differ from the closed-form target because the closed-form formula "
-                "(Schoenfeld's formula) assumes a log-rank test, while the simulation fits a Cox "
-                "proportional hazards model directly. The Cox model's Wald test can produce power "
-                "modestly below the closed-form target. "
+        if hazard_ratio == 1.0:
+            st.error("Treatment hazard ratio is 1.0, meaning no difference between arms. No finite sample size exists when there is no difference between arms. Enter a hazard ratio other than 1.0.")
+        else:
+            trial = SurvivalEndpoint(
+                accrual_period=accrual_period, follow_up_period=follow_up_period,
+                alpha=alpha, allocation_ratio=allocation_ratio,
             )
+            result = trial.closed_form_sample_size(
+                hazard_ratio=hazard_ratio, control_median_survival=control_median_survival, power=power_target,
+            )
+            st.write(f"Events needed: {result['events_needed']:.1f}")
+            st.write(f"Control arm sample size: {result['n_control']:.1f}")
+            st.write(f"Treatment arm sample size: {result['n_treatment']:.1f}")
+            st.write(f"Total sample size: {result['n_total']:.1f}")
 
+            st.subheader("Power curve")
+            n_control_point = result["n_control"]
+            n_range = np.linspace(5, n_control_point * 2, 100)
+            power_curve = [trial.closed_form_power(n, hazard_ratio, control_median_survival) for n in n_range]
+
+            fig, ax = plt.subplots()
+            ax.plot(n_range, power_curve)
+            ax.axhline(power_target, color="gray", linestyle="--", label=f"target power ({power_target})")
+            ax.axvline(n_control_point, color="red", linestyle="--", label=f"required n ({n_control_point:.1f})")
+            ax.set_xlabel("Control arm sample size")
+            ax.set_ylabel("Power")
+            ax.legend()
+            st.pyplot(fig)
+
+            if run_simulation:
+                with st.spinner("Running simulation (this one's slower)..."):
+                    sim_power = trial.simulate_power(
+                        n_per_arm=round(result["n_control"]), control_median_survival=control_median_survival,
+                        hazard_ratio=hazard_ratio, n_sims=n_sims, seed=1,
+                    )
+                st.write(f"Simulated power at control n={round(result['n_control'])}: {sim_power:.3f} (target: {power_target})")
+                st.caption(
+                    "Simulated power can differ from the closed-form target because the closed-form formula "
+                    "(Schoenfeld's formula) assumes a log-rank test, while the simulation fits a Cox "
+                    "proportional hazards model directly. The Cox model's Wald test can produce power "
+                    "modestly below the closed-form target."
+                )
