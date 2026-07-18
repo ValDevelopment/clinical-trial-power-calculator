@@ -56,6 +56,31 @@ class BinaryEndpoint:
         def f(n):
             return self.closed_form_power(n, p1, p2) - power
         return brentq(f, 2.0, 1e7)
+    
+    def closed_form_power_ni(self, n_per_arm, margin, p_control, p_treatment):
+        """
+        Power for a one-sided non-inferiority test on the risk-difference
+        scale. Assumes lower event rates are better (e.g. an adverse
+        event or failure endpoint): treatment is declared non-inferior
+        if its event rate is not more than `margin` higher than
+        control's.
+
+        p_control, p_treatment are the assumed true event rates. Setting
+        p_treatment equal to p_control is the standard conservative
+        planning assumption (treatment truly equal to control).
+        """
+        n_c, n_t = n_per_arm, n_per_arm * self.allocation_ratio
+        se = np.sqrt(p_treatment * (1 - p_treatment) / n_t + p_control * (1 - p_control) / n_c)
+        ncp = (margin + (p_control - p_treatment)) / se
+        z_alpha = stats.norm.ppf(1 - self.alpha)
+        return stats.norm.cdf(ncp - z_alpha)
+
+    def closed_form_sample_size_ni(self, margin, p_control, p_treatment=None, power=0.8):
+        if p_treatment is None:
+            p_treatment = p_control  # conservative planning assumption
+        def f(n):
+            return self.closed_form_power_ni(n, margin, p_control, p_treatment) - power
+        return brentq(f, 2.0, 1e7)
 
     def simulate_power(self, n_per_arm, control_event_rate, odds_ratio, dropout_rate=0.0,
                         n_sims=2000, seed=None):

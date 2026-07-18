@@ -63,6 +63,36 @@ class ContinuousEndpoint:
             if hi > 1e7:
                 raise RuntimeError("could not bracket a solution, check inputs")
         return brentq(f, lo, hi)
+    
+    def closed_form_power_ni(self, n_per_arm, margin, treatment_effect=0.0):
+        """
+        Power for a one-sided non-inferiority test at a fixed per-arm
+        sample size. treatment_effect is the assumed true mean
+        difference (treatment minus control), 0 being the standard
+        conservative planning assumption. margin is the largest
+        acceptable amount treatment could be worse than control and
+        still be declared non-inferior.
+        """
+        n1, n2 = n_per_arm, n_per_arm * self.allocation_ratio
+        df = n1 + n2 - 2
+        ncp = (treatment_effect + margin) / (self.outcome_sd * np.sqrt(1 / n1 + 1 / n2))
+        t_crit = stats.t.ppf(1 - self.alpha, df)  # one-sided
+        return 1 - stats.nct.cdf(t_crit, df, ncp)
+
+    def closed_form_sample_size_ni(self, margin, treatment_effect=0.0, power=0.8):
+        def f(n):
+            return self.closed_form_power_ni(n, margin, treatment_effect) - power
+        lo = 2.0
+        if f(lo) >= 0:
+            return lo
+        hi = 4.0
+        f_hi = f(hi)
+        while not (np.isfinite(f_hi) and f_hi > 0):
+            hi *= 1.5 if np.isfinite(f_hi) else 1.05
+            f_hi = f(hi)
+            if hi > 1e7:
+                raise RuntimeError("could not bracket a solution, check inputs")
+        return brentq(f, lo, hi)
 
     def simulate_power(self, n_per_arm, treatment_effect, dropout_rate=0.0, n_sims=2000, seed=None):
         rng = np.random.default_rng(seed)

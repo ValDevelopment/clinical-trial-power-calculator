@@ -78,19 +78,7 @@ class SurvivalEndpoint:
         n_treat = n_control * self.allocation_ratio
         return dict(events_needed=events_needed, p_control=p_control, p_treat=p_treat,
                     n_control=n_control, n_treatment=n_treat, n_total=n_control + n_treat)
-
-    def simulate_power(self, n_per_arm, control_median_survival, hazard_ratio, dropout_rate=0.0,
-                        n_sims=500, seed=None):
-        rng = np.random.default_rng(seed)
-        reject = 0
-        for _ in range(n_sims):
-            trial_seed = rng.integers(0, 2**31 - 1)
-            df = self.generate_trial(n_per_arm, control_median_survival, hazard_ratio, dropout_rate, trial_seed)
-            model = PHReg(df["time"], df[["arm", "baseline"]], status=df["event"], ties="efron")
-            result = model.fit(disp=0)
-            if result.pvalues[0] < self.alpha:
-                reject += 1
-        return reject / n_sims
+    
     
     def closed_form_power(self, n_per_arm, hazard_ratio, control_median_survival):
         h0 = np.log(2) / control_median_survival
@@ -107,4 +95,66 @@ class SurvivalEndpoint:
         z_alpha = stats.norm.ppf(1 - self.alpha / 2)
         z_beta = np.sqrt(events * q * (1 - q)) * abs(np.log(hazard_ratio)) - z_alpha
         return stats.norm.cdf(z_beta)
+    
+    def closed_form_events_needed_ni(self, margin, true_hazard_ratio=1.0, power=0.8):
+        """
+        Number of events needed for a one-sided non-inferiority test on
+        the hazard-ratio scale. margin is the largest hazard ratio
+        (treatment vs. control) still considered non-inferior.
+        true_hazard_ratio is the assumed true hazard ratio; 1.0
+        (treatment truly equal to control) is the standard conservative
+        planning assumption.
+        """
+        z_alpha = stats.norm.ppf(1 - self.alpha)  # one-sided
+        z_beta = stats.norm.ppf(power)
+        k = self.allocation_ratio
+        q = k / (1 + k)
+        log_diff = np.log(margin) - np.log(true_hazard_ratio)
+        return (z_alpha + z_beta) ** 2 / (q * (1 - q) * log_diff ** 2)
+
+    def closed_form_sample_size_ni(self, margin, control_median_survival, true_hazard_ratio=1.0, power=0.8):
+        events_needed = self.closed_form_events_needed_ni(margin, true_hazard_ratio, power)
+        h0 = np.log(2) / control_median_survival
+        h_treat = h0 * true_hazard_ratio
+        q = self.allocation_ratio / (1 + self.allocation_ratio)
+
+        p_control = self._expected_event_probability(h0)
+        p_treat = self._expected_event_probability(h_treat)
+        p_overall = q * p_treat + (1 - q) * p_control
+
+        n_total = events_needed / p_overall
+        n_control = n_total / (1 + self.allocation_ratio)
+        n_treat = n_control * self.allocation_ratio
+        return dict(events_needed=events_needed, p_control=p_control, p_treat=p_treat,
+                    n_control=n_control, n_treatment=n_treat, n_total=n_control + n_treat)
+
+    def closed_form_power_ni(self, n_per_arm, margin, control_median_survival, true_hazard_ratio=1.0):
+        h0 = np.log(2) / control_median_survival
+        h_treat = h0 * true_hazard_ratio
+        q = self.allocation_ratio / (1 + self.allocation_ratio)
+
+        p_control = self._expected_event_probability(h0)
+        p_treat = self._expected_event_probability(h_treat)
+        p_overall = q * p_treat + (1 - q) * p_control
+
+        n_total = n_per_arm * (1 + self.allocation_ratio)
+        events = n_total * p_overall
+
+        z_alpha = stats.norm.ppf(1 - self.alpha)
+        log_diff = np.log(margin) - np.log(true_hazard_ratio)
+        z_beta = np.sqrt(events * q * (1 - q)) * abs(log_diff) - z_alpha
+        return stats.norm.cdf(z_beta)
+
+    def simulate_power(self, n_per_arm, control_median_survival, hazard_ratio, dropout_rate=0.0,
+                        n_sims=500, seed=None):
+        rng = np.random.default_rng(seed)
+        reject = 0
+        for _ in range(n_sims):
+            trial_seed = rng.integers(0, 2**31 - 1)
+            df = self.generate_trial(n_per_arm, control_median_survival, hazard_ratio, dropout_rate, trial_seed)
+            model = PHReg(df["time"], df[["arm", "baseline"]], status=df["event"], ties="efron")
+            result = model.fit(disp=0)
+            if result.pvalues[0] < self.alpha:
+                reject += 1
+        return reject / n_sims
     
