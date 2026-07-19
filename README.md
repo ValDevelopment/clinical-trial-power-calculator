@@ -1,4 +1,3 @@
-
 # Clinical Trial Power Calculator
 
 A sample size and power calculator for two-arm clinical trials, covering continuous, binary, and time-to-event endpoints. Supports both closed-form formulas and simulation-based power estimated by fitting the actual regression model (ANCOVA, logistic regression, Cox proportional hazards) to synthetic trial data, rather than relying on textbook approximations alone.
@@ -7,7 +6,7 @@ A sample size and power calculator for two-arm clinical trials, covering continu
 
 Sample size planning is a design-stage problem: before a trial exists, a statistician must determine how many subjects are required to detect an effect of a given size at a specified level of confidence. This tool addresses that question in two ways for each endpoint type: a closed-form formula for rapid estimation, and a simulation that generates synthetic subject-level data under the specified assumptions and fits the actual analysis model to it, producing an empirical power estimate that reflects what the planned analysis would find in practice.
 
-This project is deliberately prospective rather than retrospective. The [CDISC survival analysis](https://github.com/ValDevelopment/CDISC-ADaM-Survival-Analysis) and [FAERS signal detection](https://github.com/ValDevelopment/FAERS-signal-detection) projects both analyze data that already exists. This tool supports the decision made before a trial begins, addressing a different phase of a trial's life cycle than either of those projects.
+This project is deliberately prospective rather than retrospective. The [CDISC safety analysis](https://github.com/ValDevelopment/CDISC-ADaM-Survival-Analysis) and [FAERS signal detection](https://github.com/ValDevelopment/FAERS-signal-detection) projects both analyze data that already exists. This tool supports the decision made before a trial begins, addressing a different phase of a trial's life cycle than either of those projects.
 
 ## Approach
 
@@ -49,7 +48,7 @@ One additional implementation-level finding is documented here: `scipy.stats.nct
 
 ## CDISC Example
 
-`notebooks/04_worked_example.ipynb` applies the survival endpoint to a finding from the CDISC safety analysis project: a hazard ratio of 5.03 for dose-dependent adverse event risk. A confirmatory study powered around this observed effect requires approximately 15 total subjects, reflecting the magnitude of the effect. A more conservative planning assumption (HR = 1.5) requires approximately 293 subjects, nearly twenty times as many. This comparison illustrates the notebook's central point: required sample size for a confirmatory trial depends substantially on the level of confidence placed in a pilot study's effect size estimate, a judgment this tool is intended to support rather than replace.
+`notebooks/04_cdisc_example.ipynb` applies the survival endpoint to a finding from the CDISC safety analysis project: a hazard ratio of 5.03 for dose-dependent adverse event risk. A confirmatory study powered around this observed effect requires approximately 15 total subjects, reflecting the magnitude of the effect. A more conservative planning assumption (HR = 1.5) requires approximately 293 subjects, nearly twenty times as many. This comparison illustrates the notebook's central point: required sample size for a confirmatory trial depends substantially on the level of confidence placed in a pilot study's effect size estimate, a judgment this tool is intended to support rather than replace.
 
 ## Repository Structure
 
@@ -59,16 +58,18 @@ clinical-trial-power-calculator/
 │   ├── __init__.py
 │   ├── continuous.py
 │   ├── binary.py
-│   └── survival.py
+│   ├── survival.py
+│   └── group_sequential.py
 ├── notebooks/
-│   ├── 01_data_generating_process.ipynb
+│   ├── 01_data_gen.ipynb
 │   ├── 02_closed_form_power.ipynb
 │   ├── 03_simulation_power.ipynb
-│   └── 04_worked_example.ipynb
+│   └── 04_cdisc_example.ipynb
 ├── tests/
 │   ├── test_continuous.py
 │   ├── test_binary.py
-│   └── test_survival.py
+│   ├── test_survival.py
+│   └── test_groupseq.py
 ├── app.py
 ├── pyproject.toml
 └── README.md
@@ -100,7 +101,6 @@ sim_power = trial.simulate_power(n_per_arm=round(n), treatment_effect=5.0, n_sim
 - The survival endpoint assumes a constant hazard (exponential distribution). Real hazard functions are frequently non-constant; a Weibull or piecewise-constant option would be a natural extension.
 - Simulation-based power relies on complete-case analysis (excluding missing outcomes), consistent with the MCAR assumption above but not representative of how a trial with informative missingness would typically be analyzed (for example, via MMRM or multiple imputation).
 - Closed-form formulas target standard tests (t-test, two-proportion z, log-rank). As shown in Validation, an actual regression-based analysis can produce modestly different power, in some cases higher (covariate adjustment) and in others lower (Wald test finite-sample behavior). The simulation module is designed specifically to identify this gap.
-- Non-inferiority margins, unequal allocation beyond a fixed ratio, and interim or group sequential designs are not yet supported.
 - Cox proportional hazards simulation is notably slower than the other two endpoints (approximately 70ms per replicate); its default simulation count is set lower accordingly.
 
 ## References

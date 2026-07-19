@@ -15,6 +15,7 @@ st.markdown(
     """
 )
 
+
 endpoint_type = st.selectbox(
     "Endpoint type",
     ["Continuous", "Binary", "Survival"],
@@ -23,8 +24,8 @@ endpoint_type = st.selectbox(
 if endpoint_type == "Continuous":
     test_type = st.radio(
         "Test type",
-        ["Superiority", "Non-inferiority"],
-        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin.",
+        ["Superiority", "Non-inferiority", "Group Sequential"],
+        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin. Group Sequential plans a superiority trial with interim looks, allowing early stopping for a large observed effect.",
     )
 
     if test_type == "Superiority":
@@ -108,7 +109,7 @@ if endpoint_type == "Continuous":
                             "closed-form assumption."
                         )
 
-    else:  # Non-inferiority
+    elif test_type == "Non-inferiority":
         margin = st.number_input(
             "Non-inferiority margin", value=2.0, min_value=0.01,
             help="Largest acceptable amount by which the treatment mean could be worse than control and still be declared non-inferior.",
@@ -163,11 +164,72 @@ if endpoint_type == "Continuous":
                 ax.set_ylabel("Power")
                 ax.legend()
                 st.pyplot(fig)
+    else:  # Group Sequential
+        treatment_effect = st.number_input(
+            "Treatment effect (mean difference)", value=5.0,
+            help="True mean difference in outcome expected between the treatment and control arms.",
+        )
+        outcome_sd = st.number_input(
+            "Outcome standard deviation", value=10.0, min_value=0.01,
+            help="Natural variability in outcome between subjects, independent of treatment.",
+        )
+        power_target = st.slider(
+            "Target power", 0.5, 0.99, 0.8,
+            help="Probability of detecting the treatment effect by the final analysis, assuming the effect is real.",
+        )
+        alpha = st.number_input(
+            "Alpha (significance level)", value=0.05, min_value=0.001, max_value=0.5,
+            help="Acceptable overall false-positive rate across all interim looks combined. Conventional default is 0.05.",
+        )
+        allocation_ratio = st.number_input(
+            "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+            help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation.",
+        )
+        K = st.number_input(
+            "Number of analyses (including the final one)", value=5, min_value=2, max_value=15, step=1,
+            help="Total planned analyses, interim looks plus the final analysis. Assumes looks are equally spaced by information (subjects enrolled), using O'Brien-Fleming boundaries.",
+        )
+
+        if st.button("Calculate"):
+            if treatment_effect == 0:
+                st.error("Treatment effect is 0. No finite sample size exists when there is no difference between arms. Enter a non-zero treatment effect.")
+            else:
+                trial = ContinuousEndpoint(outcome_sd=outcome_sd, alpha=alpha, allocation_ratio=allocation_ratio)
+                try:
+                    result = trial.group_sequential_sample_size(treatment_effect=treatment_effect, K=int(K), power=power_target)
+                except RuntimeError:
+                    st.error(
+                        "The required sample size exceeds 10 million subjects per arm, far beyond any "
+                        "realistic trial. This treatment effect is too small relative to the outcome "
+                        "standard deviation to be practically detectable. Consider a larger effect or a "
+                        "smaller standard deviation."
+                    )
+                else:
+                    n_control_max = result["n_max"]
+                    n_treatment_max = n_control_max * allocation_ratio
+                    st.write(f"Fixed-design sample size per arm (no interim looks): {result['n_fixed']:.1f}")
+                    st.write(f"Inflation factor: {result['inflation_factor']:.3f}")
+                    st.write(f"Control arm maximum sample size: {n_control_max:.1f}")
+                    st.write(f"Treatment arm maximum sample size: {n_treatment_max:.1f}")
+
+                    st.subheader("Stopping boundaries")
+                    fig, ax = plt.subplots()
+                    ax.plot(result["information_fractions"], result["z_bounds"], marker="o")
+                    ax.axhline(1.96, color="gray", linestyle="--", label="fixed-design critical value (1.96)")
+                    ax.set_xlabel("Information fraction")
+                    ax.set_ylabel("Z-scale stopping boundary")
+                    ax.legend()
+                    st.pyplot(fig)
+                    st.caption(
+                        "Each point is the Z-statistic magnitude needed to stop for efficacy at that look. "
+                        "Early boundaries are deliberately conservative, making it hard to stop early on "
+                        "noise, while the final boundary sits close to the fixed-design critical value."
+                    )
 elif endpoint_type == "Binary":
     test_type = st.radio(
         "Test type",
-        ["Superiority", "Non-inferiority"],
-        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin.",
+        ["Superiority", "Non-inferiority", "Group Sequential"],
+        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin. Group Sequential plans a superiority trial with interim looks, allowing early stopping for a large observed effect.",
     )
 
     if test_type == "Superiority":
@@ -245,8 +307,7 @@ elif endpoint_type == "Binary":
                             "regression directly. Logistic regression's Wald test can produce power modestly "
                             "below the closed-form target."
                         )
-
-    else:  # Non-inferiority
+    elif test_type == "Non-inferiority":
         st.caption(
             "Assumes lower event rates are better (e.g. an adverse event or failure endpoint). "
             "Treatment is non-inferior if its event rate is not more than the margin higher than control's."
@@ -306,11 +367,72 @@ elif endpoint_type == "Binary":
                 ax.set_ylabel("Power")
                 ax.legend()
                 st.pyplot(fig)
+    else:  # Group Sequential
+        control_event_rate = st.slider(
+            "Control arm event rate", 0.01, 0.99, 0.30,
+            help="Proportion of control-arm subjects expected to experience the event.",
+        )
+        odds_ratio = st.number_input(
+            "Treatment odds ratio", value=0.5, min_value=0.01,
+            help="Change in the odds of the event under treatment. Values below 1.0 indicate reduced odds. Values above 1.0 indicate increased odds.",
+        )
+        power_target = st.slider(
+            "Target power", 0.5, 0.99, 0.8,
+            help="Probability of detecting the treatment effect by the final analysis, assuming the effect is real.",
+        )
+        alpha = st.number_input(
+            "Alpha (significance level)", value=0.05, min_value=0.001, max_value=0.5,
+            help="Acceptable overall false-positive rate across all interim looks combined. Conventional default is 0.05.",
+        )
+        allocation_ratio = st.number_input(
+            "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+            help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation.",
+        )
+        K = st.number_input(
+            "Number of analyses (including the final one)", value=5, min_value=2, max_value=15, step=1,
+            help="Total planned analyses, interim looks plus the final analysis. Assumes looks are equally spaced by information, using O'Brien-Fleming boundaries.",
+        )
+
+        if st.button("Calculate"):
+            if odds_ratio == 1.0:
+                st.error("Treatment odds ratio is 1.0, meaning no difference between arms. No finite sample size exists when there is no difference between arms. Enter an odds ratio other than 1.0.")
+            else:
+                trial = BinaryEndpoint(alpha=alpha, allocation_ratio=allocation_ratio)
+                odds_control = control_event_rate / (1 - control_event_rate)
+                odds_treatment = odds_control * odds_ratio
+                p_treatment = odds_treatment / (1 + odds_treatment)
+
+                try:
+                    result = trial.group_sequential_sample_size(p1=control_event_rate, p2=p_treatment, K=int(K), power=power_target)
+                except ValueError:
+                    st.error("Could not calculate a sample size for these inputs. Check that the control event rate and odds ratio produce a realistic treatment event rate.")
+                else:
+                    n_control_max = result["n_max"]
+                    n_treatment_max = n_control_max * allocation_ratio
+                    st.write(f"Treatment arm event rate implied by this odds ratio: {p_treatment:.3f}")
+                    st.write(f"Fixed-design sample size per arm (no interim looks): {result['n_fixed']:.1f}")
+                    st.write(f"Inflation factor: {result['inflation_factor']:.3f}")
+                    st.write(f"Control arm maximum sample size: {n_control_max:.1f}")
+                    st.write(f"Treatment arm maximum sample size: {n_treatment_max:.1f}")
+
+                    st.subheader("Stopping boundaries")
+                    fig, ax = plt.subplots()
+                    ax.plot(result["information_fractions"], result["z_bounds"], marker="o")
+                    ax.axhline(1.96, color="gray", linestyle="--", label="fixed-design critical value (1.96)")
+                    ax.set_xlabel("Information fraction")
+                    ax.set_ylabel("Z-scale stopping boundary")
+                    ax.legend()
+                    st.pyplot(fig)
+                    st.caption(
+                        "Each point is the Z-statistic magnitude needed to stop for efficacy at that look. "
+                        "Early boundaries are deliberately conservative, making it hard to stop early on "
+                        "noise, while the final boundary sits close to the fixed-design critical value."
+                    )
 elif endpoint_type == "Survival":
     test_type = st.radio(
         "Test type",
-        ["Superiority", "Non-inferiority"],
-        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin.",
+        ["Superiority", "Non-inferiority", "Group Sequential"],
+        help="Superiority tests whether the treatment differs from control. Non-inferiority tests whether the treatment is not worse than control by more than a specified margin. Group Sequential plans a superiority trial with interim looks, allowing early stopping for a large observed effect.",
     )
 
     st.caption("Enter all time values in a consistent unit. Months is typical for clinical trials.")
@@ -396,8 +518,7 @@ elif endpoint_type == "Survival":
                         "proportional hazards model directly. The Cox model's Wald test can produce power "
                         "modestly below the closed-form target."
                     )
-
-    else:  # Non-inferiority
+    elif test_type == "Non-inferiority":
         control_median_survival = st.number_input(
             "Control arm median survival (months)", value=12.0, min_value=0.01,
             help="Time by which 50% of control-arm subjects are expected to experience the event. All time-based fields below must use the same unit.",
@@ -461,3 +582,67 @@ elif endpoint_type == "Survival":
             ax.set_ylabel("Power")
             ax.legend()
             st.pyplot(fig)
+    else:  # Group Sequential
+        control_median_survival = st.number_input(
+            "Control arm median survival (months)", value=12.0, min_value=0.01,
+            help="Time by which 50% of control-arm subjects are expected to experience the event. All time-based fields below must use the same unit.",
+        )
+        hazard_ratio = st.number_input(
+            "Treatment hazard ratio", value=0.6, min_value=0.01,
+            help="Change in the instantaneous risk of the event under treatment. Values below 1.0 indicate reduced risk. Values above 1.0 indicate increased risk.",
+        )
+        accrual_period = st.number_input(
+            "Accrual period (months)", value=6.0, min_value=0.01,
+            help="Duration over which subjects are enrolled at a steady rate, before the study closes to new subjects.",
+        )
+        follow_up_period = st.number_input(
+            "Follow-up period (months, after last enrollment)", value=18.0, min_value=0.01,
+            help="Duration subjects are followed after the last subject enrolls, before study end and administrative censoring.",
+        )
+        power_target = st.slider(
+            "Target power", 0.5, 0.99, 0.8,
+            help="Probability of detecting the treatment effect by the final analysis, assuming the effect is real.",
+        )
+        alpha = st.number_input(
+            "Alpha (significance level)", value=0.05, min_value=0.001, max_value=0.5,
+            help="Acceptable overall false-positive rate across all interim looks combined. Conventional default is 0.05.",
+        )
+        allocation_ratio = st.number_input(
+            "Allocation ratio (treatment:control)", value=1.0, min_value=0.1,
+            help="Ratio of treatment arm size to control arm size. A value of 1.0 indicates equal allocation.",
+        )
+        K = st.number_input(
+            "Number of analyses (including the final one)", value=5, min_value=2, max_value=15, step=1,
+            help="Total planned analyses, interim looks plus the final analysis. Assumes looks are equally spaced by information (events observed), using O'Brien-Fleming boundaries.",
+        )
+
+        if st.button("Calculate"):
+            if hazard_ratio == 1.0:
+                st.error("Treatment hazard ratio is 1.0, meaning no difference between arms. No finite sample size exists when there is no difference between arms. Enter a hazard ratio other than 1.0.")
+            else:
+                trial = SurvivalEndpoint(
+                    accrual_period=accrual_period, follow_up_period=follow_up_period,
+                    alpha=alpha, allocation_ratio=allocation_ratio,
+                )
+                result = trial.group_sequential_sample_size(
+                    hazard_ratio=hazard_ratio, control_median_survival=control_median_survival,
+                    K=int(K), power=power_target,
+                )
+                st.write(f"Events needed (maximum): {result['events_needed']:.1f}")
+                st.write(f"Inflation factor: {result['inflation_factor']:.3f}")
+                st.write(f"Control arm maximum sample size: {result['n_control']:.1f}")
+                st.write(f"Treatment arm maximum sample size: {result['n_treatment']:.1f}")
+
+                st.subheader("Stopping boundaries")
+                fig, ax = plt.subplots()
+                ax.plot(result["information_fractions"], result["z_bounds"], marker="o")
+                ax.axhline(1.96, color="gray", linestyle="--", label="fixed-design critical value (1.96)")
+                ax.set_xlabel("Information fraction")
+                ax.set_ylabel("Z-scale stopping boundary")
+                ax.legend()
+                st.pyplot(fig)
+                st.caption(
+                    "Each point is the Z-statistic magnitude needed to stop for efficacy at that look. "
+                    "Early boundaries are deliberately conservative, making it hard to stop early on "
+                    "noise, while the final boundary sits close to the fixed-design critical value."
+                )
