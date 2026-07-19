@@ -3,6 +3,7 @@ import pandas as pd
 from scipy import stats
 from scipy.optimize import brentq
 import statsmodels.api as sm
+from power_calc.group_sequential import group_sequential_boundaries, inflation_factor
 
 
 class ContinuousEndpoint:
@@ -106,3 +107,20 @@ class ContinuousEndpoint:
             if model.pvalues["arm"] < self.alpha:
                 reject += 1
         return reject / n_sims
+    
+
+    def group_sequential_sample_size(self, treatment_effect, K, power=0.8):
+        """
+        Maximum per-arm sample size for a group sequential design with K
+        equally spaced O'Brien-Fleming interim looks.
+        """
+        n_fixed = self.closed_form_sample_size(treatment_effect, power)
+        z_bounds, t, cum_alpha = group_sequential_boundaries(K, alpha=self.alpha)
+        factor = inflation_factor(z_bounds, t, alpha=self.alpha, power=power)
+        return dict(
+            n_fixed=n_fixed,
+            inflation_factor=factor,
+            n_max=n_fixed * factor,
+            z_bounds=z_bounds,
+            information_fractions=t,
+        )

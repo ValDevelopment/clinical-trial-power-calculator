@@ -6,9 +6,6 @@ print(n)
 print(trial.simulate_power(n_per_arm=182, control_event_rate=0.30, odds_ratio=0.5, n_sims=2000, seed=1)) 
 
 def test_ni_sample_size_matches_direct_simulation_benchmark():
-    # validated against 20,000 direct simulations of the one-sided
-    # risk-difference non-inferiority z-test; closed-form gave n=197.8,
-    # power=0.8004
     trial = BinaryEndpoint()
     n = trial.closed_form_sample_size_ni(margin=0.10, p_control=0.20, power=0.8)
     assert abs(n - 197.8) < 0.5
