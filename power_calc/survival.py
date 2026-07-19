@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from statsmodels.duration.hazard_regression import PHReg
+from power_calc.group_sequential import group_sequential_boundaries, inflation_factor
 
 
 class SurvivalEndpoint:
@@ -157,4 +158,19 @@ class SurvivalEndpoint:
             if result.pvalues[0] < self.alpha:
                 reject += 1
         return reject / n_sims
+    
+
+    def group_sequential_sample_size(self, hazard_ratio, control_median_survival, K, power=0.8):
+        fixed = self.closed_form_sample_size(hazard_ratio, control_median_survival, power)
+        z_bounds, t, cum_alpha = group_sequential_boundaries(K, alpha=self.alpha)
+        factor = inflation_factor(z_bounds, t, alpha=self.alpha, power=power)
+        return dict(
+            events_needed=fixed["events_needed"] * factor,
+            n_control=fixed["n_control"] * factor,
+            n_treatment=fixed["n_treatment"] * factor,
+            n_total=fixed["n_total"] * factor,
+            inflation_factor=factor,
+            z_bounds=z_bounds,
+            information_fractions=t,
+        )
     
